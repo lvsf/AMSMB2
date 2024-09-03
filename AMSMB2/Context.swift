@@ -200,9 +200,12 @@ extension SMB2Context {
 extension SMB2Context {
     func connect(server: String, share: String, user: String) throws {
         try async_await { context, cbPtr -> Int32 in
-            smb2_connect_share_async(
-                context, server, share, user, SMB2Context.generic_handler, cbPtr
-            )
+            if (share.isEmpty) {
+                return smb2_connect_async(context, server, SMB2Context.generic_handler, cbPtr)
+            }
+            else {
+                return smb2_connect_share_async(context, server, share, user, SMB2Context.generic_handler, cbPtr)
+            }
         }
     }
 
