@@ -15,6 +15,7 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
     
     public typealias SimpleCompletionHandler = ((_ error: Error?) -> Void)?
     public typealias ReadProgressHandler = ((_ bytes: Int64, _ total: Int64) -> Bool)?
+    public typealias ReadDataProgressHandler = ((_ data: Data) -> Bool)?
     public typealias WriteProgressHandler = ((_ bytes: Int64) -> Bool)?
     fileprivate typealias CopyProgressHandler = ((_ bytes: Int64, _ soFar: Int64, _ total: Int64) -> Bool)?
     
@@ -719,6 +720,14 @@ public class AMSMB2: NSObject, NSSecureCoding, Codable, NSCopying, CustomReflect
             try self.read(context: context, path: path, to: stream, progress: progress)
         }
     }
+    
+    @objc(downloadItemAtPath:dataProgress:completionHandler:)
+    open func downloadItem(atPath path: String, dataProgress: ReadDataProgressHandler,
+                           completionHandler: SimpleCompletionHandler) {
+        with(completionHandler: completionHandler) { context in
+            try self.readData(context: context, path: path, dataProgress: dataProgress)
+        }
+    }
 }
 
 extension AMSMB2 {
@@ -979,6 +988,30 @@ extension AMSMB2 {
                 sent += Int64(written)
                 shouldContinue = progress?(sent, size) ?? true
             }
+        }
+    }
+    
+    fileprivate func readData(context: SMB2Context, path: String, range: Range<Int64> = 0..<Int64.max, dataProgress: ReadDataProgressHandler) throws {
+        let file = try SMB2FileHandle(forReadingAtPath: path, on: context)
+        let filesize = try Int64(file.fstat().smb2_size)
+        let length = range.upperBound - range.lowerBound
+        let size = min(length, filesize - range.lowerBound)
+        
+        var shouldContinue = true
+        var sent: Int64 = 0
+        try file.lseek(offset: range.lowerBound, whence: .set)
+        while shouldContinue {
+            let prefCount = Int(min(Int64(file.optimizedReadSize), Int64(size - sent)))
+            guard prefCount > 0 else {
+                break
+            }
+            let data = try file.read(length: prefCount)
+            if data.isEmpty {
+                break
+            }
+            let written = data.count
+            sent += Int64(written)
+            shouldContinue = dataProgress?(data) ?? true
         }
     }
     
